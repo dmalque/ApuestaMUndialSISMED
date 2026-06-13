@@ -466,7 +466,7 @@ function viewPartidos(){
           flag = `<span class="${ok?"hit":"miss"}">${ok?"✓":"✗"} ${mine.pick}</span>`;
         } else flag = `<span class="mypick">tú: ${mine.pick}</span>`;
       }
-      return `<button class="mini-match" data-detail="${matchKey(m)}">
+      return `<button class="mini-match mini-${estado}" data-detail="${matchKey(m)}">
         <span class="dot dot-${estado}" title="${estado}"></span>
         <span class="m1">${m.team1}</span>
         <span class="mini-score ${sc?"":"pending"}">${sc?`${sc[0]}–${sc[1]}`:fmtTime(parseKickoff(m))}</span>
