@@ -16,7 +16,7 @@
 
 <header class="topbar">
   <div class="brand">
-    <span class="brand-ball">⚽</span>
+    <span class="brand-ball"><i data-lucide="volleyball"></i></span>
     <div class="brand-text">
       <span class="brand-title">FIEBRE&nbsp;MUNDIAL</span>
       <span class="brand-year">26 · POLLA DE OFICINA · S/1 POR PARTIDO</span>
@@ -33,10 +33,10 @@
 </main>
 
 <nav class="tabbar" role="tablist">
-  <button class="tab active" data-tab="hoy"   role="tab"><span class="tab-ico">🎟️</span>Hoy</button>
-  <button class="tab" data-tab="tabla"        role="tab"><span class="tab-ico">🏆</span>Tabla</button>
-  <button class="tab" data-tab="resumen"      role="tab"><span class="tab-ico">📊</span>Resumen</button>
-  <button class="tab" data-tab="partidos"     role="tab"><span class="tab-ico">📅</span>Partidos</button>
+  <button class="tab active" data-tab="hoy"   role="tab"><span class="tab-ico"><i data-lucide="ticket"></i></span>Hoy</button>
+  <button class="tab" data-tab="tabla"        role="tab"><span class="tab-ico"><i data-lucide="trophy"></i></span>Tabla</button>
+  <button class="tab" data-tab="resumen"      role="tab"><span class="tab-ico"><i data-lucide="layout-grid"></i></span>Resumen</button>
+  <button class="tab" data-tab="partidos"     role="tab"><span class="tab-ico"><i data-lucide="calendar-days"></i></span>Partidos</button>
 </nav>
 
 <!-- Modal genérico -->
@@ -47,6 +47,7 @@
 <div id="toast" class="toast hidden"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.min.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>

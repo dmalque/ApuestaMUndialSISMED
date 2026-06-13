@@ -18,6 +18,8 @@ const S = {
 
 /* ---------------- utilidades ---------------- */
 const $ = (sel) => document.querySelector(sel);
+const ic = (name, cls="") => `<i data-lucide="${name}"${cls?` class="${cls}"`:""}></i>`;
+function paintIcons(){ try{ if(window.lucide) lucide.createIcons(); }catch(e){} }
 const slug = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
 const matchKey = (m) => `${m.date}_${slug(m.team1)}_${slug(m.team2)}`;
 
@@ -150,7 +152,7 @@ function renderUserChip(){
 /* ---------------- acciones ---------------- */
 async function placeBet(m, pick){
   if(!S.me){ openLogin(); return; }
-  if(new Date() > lockTime(m)){ toast("⛔ Las apuestas para este partido ya cerraron"); render(); return; }
+  if(new Date() > lockTime(m)){ toast("Las apuestas para este partido ya cerraron"); render(); return; }
   const key = matchKey(m);
   const prev = myBet(m);
   // optimista
@@ -162,7 +164,7 @@ async function placeBet(m, pick){
     .upsert({ player_id:S.me.id, match_key:key, pick }, { onConflict:"player_id,match_key" });
   if(error){ toast("Error al guardar, intenta de nuevo"); await loadDB(); render(); return; }
   await loadDB(); render();
-  toast(`✅ Apuesta registrada: ${pickLabel(pick, m)} (${CONFIG.CURRENCY} ${CONFIG.STAKE.toFixed(2)})`);
+  toast(`✓ Apuesta registrada: ${pickLabel(pick, m)} (${CONFIG.CURRENCY} ${CONFIG.STAKE.toFixed(2)})`);
 }
 const pickLabel = (pick,m) => pick==="1" ? `Gana ${m.team1}` : pick==="2" ? `Gana ${m.team2}` : "Empate";
 
@@ -175,6 +177,7 @@ function render(){
   else if(S.tab==="resumen") v.innerHTML = viewResumen();
   else v.innerHTML = viewPartidos();
   bindView();
+  paintIcons();
 }
 
 function ticketHTML(m, opts={}){
@@ -200,28 +203,33 @@ function ticketHTML(m, opts={}){
   if(open){
     const mins = Math.max(0, Math.round((lk - now)/60000));
     const t = mins >= 60 ? `${Math.floor(mins/60)} h ${mins%60} min` : `${mins} min`;
-    foot = `<div class="lock-note open">🟢 Apuestas abiertas · cierran en <b>&nbsp;${t}</b>&nbsp;(${fmtTime(lk)})</div>
-      <div class="lock-note">👥 ${allBets.length} ${allBets.length===1?"compañero ya apostó":"compañeros ya apostaron"} · los pronósticos se revelan al cierre</div>`;
+    foot = `<div class="lock-note open">${ic("circle")} Cierra en <b>&nbsp;${t}</b> · ${ic("users")} ${allBets.length} ${allBets.length===1?"apuesta":"apuestas"}</div>`;
   } else if(!fin){
-    foot = `<div class="lock-note closed">🔒 Apuestas cerradas · ${now>=ko ? "partido en juego o por confirmar resultado" : "inicia " + fmtTime(ko)}</div>`;
+    foot = `<div class="lock-note closed">${ic("lock")} Apuestas cerradas · ${now>=ko ? "partido en juego o por confirmar resultado" : "inicia " + fmtTime(ko)}</div>`;
   }
 
   let strip = "";
-  if(!open && allBets.length){
-    const rows = (stl ? stl.rows : allBets.map(b=>({bet:b, valid:isValidBet(b,m)})))
+  if(fin && allBets.length){
+    const rows = stl.rows
       .slice().sort((a,b)=> playerName(a.bet.player_id).localeCompare(playerName(b.bet.player_id)))
       .map(r => {
-        const net = stl && r.valid ? `<span class="net ${r.net>0?"pos":r.net<0?"neg":"zero"}">${money(r.net)}</span>` : (r.valid ? "" : `<span class="net zero">fuera de plazo</span>`);
+        const net = r.valid ? `<span class="net ${r.net>0?"pos":r.net<0?"neg":"zero"}">${money(r.net)}</span>` : `<span class="net zero">fuera de plazo</span>`;
         return `<div class="bet-row ${r.hit?"hit":""} ${r.valid?"":"invalid"}">
           <span class="who"><span class="bet-pick">${r.bet.pick}</span>${playerName(r.bet.player_id)}${S.me&&r.bet.player_id===S.me.id?" (tú)":""}</span>${net}</div>`;
       }).join("");
-    const head = stl
-      ? (stl.winners ? `🏅 ${stl.winners} acertó${stl.winners>1?"/aron":""} · cada uno recibe ${potFmt(stl.share)}` : (CONFIG.NO_WINNER_RULE==="lost"?"Nadie acertó · todos pierden su sol":"Nadie acertó · se devuelve el sol a cada uno"))
-      : "Pronósticos registrados";
+    const head = stl.winners
+      ? `${ic("medal")} ${stl.winners} acertó${stl.winners>1?"/aron":""} · cada uno recibe ${potFmt(stl.share)}`
+      : (CONFIG.NO_WINNER_RULE==="lost"?"Nadie acertó · todos pierden su sol":"Nadie acertó · se devuelve el sol a cada uno");
     strip = `<div class="bets-strip"><div class="bets-strip-title">${head}</div>${rows}</div>`;
+  } else if(!fin && allBets.length){
+    // partido aún sin resultado: NO se revelan los pronósticos ajenos
+    const mine = myBet(m);
+    strip = `<div class="bets-strip"><div class="bets-strip-title">${ic("eye-off")} Los pronósticos se revelan cuando termine el partido</div>
+      <div class="bet-row"><span class="who">${mine ? `<span class="bet-pick">${mine.pick}</span>Tu apuesta` : "Aún no has apostado"}</span>
+      <span class="net zero">${allBets.length} en total</span></div></div>`;
   }
 
-  return `<article class="ticket">
+  return `<article class="ticket ${fin?'is-done':open?'is-open':'is-live'}">
     <div class="ticket-head">
       <span>${m.group || m.round || ""} · ${fmtTime(ko)} · ${m.ground||""}</span>
       <span class="pot">Pozo ${potFmt(pot)}</span>
@@ -248,20 +256,35 @@ function viewHoy(){
   const todays = S.matches.filter(m => limaDateStr(parseKickoff(m)) === today);
   let html = "";
   if(!S.me){
-    html += `<div class="empty"><span class="big">🎟️</span>Para apostar, primero <b>entra con tu nombre</b> tocando el botón verde de arriba.</div>`;
+    html += `<div class="empty"><span class="big">${ic("ticket")}</span>Para apostar, primero <b>entra con tu nombre</b> tocando el botón azul de arriba.</div>`;
   }
   if(todays.length){
-    html += `<div class="section-label">Partidos de hoy · ${fmtDay(new Date())}</div>`;
-    html += todays.map(m=>ticketHTML(m)).join("");
+    const now = new Date();
+    const abiertos  = todays.filter(m => !isFinished(m) && now < lockTime(m));
+    const enJuego   = todays.filter(m => !isFinished(m) && now >= lockTime(m));
+    const terminados= todays.filter(m => isFinished(m));
+    html += `<div class="section-label">${ic("volleyball")} Hoy · ${fmtDay(new Date())}</div>`;
+    if(abiertos.length){
+      html += `<div class="status-band open">${ic("circle")} Abiertos para apostar</div>`;
+      html += abiertos.map(m=>ticketHTML(m)).join("");
+    }
+    if(enJuego.length){
+      html += `<div class="status-band live">${ic("lock")} En juego · por confirmar resultado</div>`;
+      html += enJuego.map(m=>ticketHTML(m)).join("");
+    }
+    if(terminados.length){
+      html += `<div class="status-band done">${ic("check-circle-2")} Terminados</div>`;
+      html += terminados.map(m=>ticketHTML(m)).join("");
+    }
   } else {
-    html += `<div class="empty"><span class="big">😴</span>Hoy no hay partidos.</div>`;
+    html += `<div class="empty"><span class="big">${ic("moon")}</span>Hoy no hay partidos.</div>`;
   }
-  // próximos (mañana)
+  // próximos (siguiente día con partidos)
   const next = S.matches.filter(m => limaDateStr(parseKickoff(m)) > today && !isFinished(m));
   if(next.length){
     const nd = limaDateStr(parseKickoff(next[0]));
     const nextDay = next.filter(m => limaDateStr(parseKickoff(m)) === nd);
-    html += `<div class="section-label">Puedes ir apostando · ${fmtDay(parseKickoff(nextDay[0]))}</div>`;
+    html += `<div class="section-label">${ic("calendar-days")} Puedes ir apostando · ${fmtDay(parseKickoff(nextDay[0]))}</div>`;
     html += nextDay.map(m=>ticketHTML(m)).join("");
   }
   return html;
@@ -272,11 +295,11 @@ function viewTabla(){
   const played = S.matches.filter(isFinished).length;
   let html = `<div class="section-label">Tabla acumulada</div>
   <p class="podium-note">Cada apuesta = ${CONFIG.CURRENCY} ${CONFIG.STAKE.toFixed(2)}. El pozo de cada partido se reparte entre quienes aciertan. El acumulado se paga al final del torneo. <b>${played}</b> partidos jugados.</p>`;
-  if(!st.length) return html + `<div class="empty"><span class="big">👥</span>Aún no hay jugadores registrados.<br>El administrador puede agregarlos desde su perfil.</div>`;
+  if(!st.length) return html + `<div class="empty"><span class="big">${ic("users")}</span>Aún no hay jugadores registrados.<br>El administrador puede agregarlos desde su perfil.</div>`;
   html += `<div class="standings">` + st.map((e,i)=>{
     const me = S.me && e.player.id===S.me.id;
     return `<div class="stand-row ${me?"me":""}">
-      <span class="stand-pos ${i===0?"p1":""}">${i===0?"🥇":i===1?"🥈":i===2?"🥉":i+1}</span>
+      <span class="stand-pos ${i===0?"p1":""}">${i===0?ic("award"):i===1?ic("medal"):i===2?ic("medal"):i+1}</span>
       <span><span class="stand-name">${e.player.name}${me?" (tú)":""}</span>
       <div class="stand-sub">${e.hits} aciertos · ${e.played} apuestas</div></span>
       <span class="stand-net net ${e.net>0?"pos":e.net<0?"neg":"zero"}">${money(e.net)}</span>
@@ -297,25 +320,30 @@ function cellInfo(m, playerId){
   if(!bet) return { pick:null };
   const fin = isFinished(m);
   const valid = isValidBet(bet, m);
+  const isMine = S.me && playerId === S.me.id;
+  // si el partido no ha terminado, solo el propio jugador ve su pick; el resto queda oculto
+  if(!fin && !isMine) return { pick:"·", cls:"hidden", valid, fin, hidden:true };
   let cls = "";
   if(!valid) cls = "invalid";
   else if(fin) cls = bet.pick === outcome(m) ? "hit" : "miss";
+  else if(isMine) cls = "mine";
   return { pick: bet.pick, cls, valid, fin };
 }
 
 function viewResumen(){
   const players = S.players.filter(p=>p.active);
   const toggle = `<div class="seg">
-    <button data-rmode="matriz" class="${S.resumenMode==="matriz"?"active":""}">📋 Matriz</button>
-    <button data-rmode="persona" class="${S.resumenMode==="persona"?"active":""}">🧍 Por persona</button>
+    <button data-rmode="matriz" class="${S.resumenMode==="matriz"?"active":""}">${ic("layout-grid")} Matriz</button>
+    <button data-rmode="persona" class="${S.resumenMode==="persona"?"active":""}">${ic("user")} Por persona</button>
   </div>`;
   const legend = `<div class="legend">
     <span class="lg-dot"><span class="lg-pick">1</span> local · <span class="lg-pick">X</span> empate · <span class="lg-pick">2</span> visita</span>
-    <span class="lg-dot"><span class="lg-pick hit">✓</span> <b>acierto</b></span>
+    <span class="lg-dot"><span class="lg-pick hit">${ic("check")}</span> <b>acierto</b></span>
+    <span class="lg-dot"><span class="lg-pick hidden">${ic("lock")}</span> <b>se revela al terminar</b></span>
   </div>`;
   let body;
-  if(!players.length) body = `<div class="empty"><span class="big">👥</span>Aún no hay jugadores.</div>`;
-  else if(!matchesWithBets().length) body = `<div class="empty"><span class="big">🎟️</span>Todavía no hay apuestas registradas.<br>Cuando alguien apueste, aquí verás el cuadro completo.</div>`;
+  if(!players.length) body = `<div class="empty"><span class="big">${ic("users")}</span>Aún no hay jugadores.</div>`;
+  else if(!matchesWithBets().length) body = `<div class="empty"><span class="big">${ic("ticket")}</span>Todavía no hay apuestas registradas.<br>Cuando alguien apueste, aquí verás el cuadro completo.</div>`;
   else body = S.resumenMode==="matriz" ? matrixHTML(players) : personHTML(players);
   return `<div class="section-label">Resumen de apuestas</div>${toggle}${legend}${body}`;
 }
@@ -336,6 +364,7 @@ function matrixHTML(players){
     const cells = players.map(p => {
       const c = cellInfo(m, p.id);
       if(!c.pick) return `<td><span class="cell-pick cell-empty">·</span></td>`;
+      if(c.hidden) return `<td><span class="cell-pick hidden">${ic("lock")}</span></td>`;
       return `<td><span class="cell-pick ${c.cls}">${c.pick}</span></td>`;
     }).join("");
     return `<tr>
@@ -356,7 +385,7 @@ function matrixHTML(players){
   </tr></tfoot>`;
 
   return `<div class="matrix-wrap"><table class="matrix">${head}<tbody>${rows}</tbody>${foot}</table></div>
-    <p class="hint" style="margin-top:10px">Desliza la tabla → para ver a todos. La primera columna queda fija. Los totales combinan dinero acumulado y aciertos.</p>`;
+    <p class="hint" style="margin-top:10px">Desliza la tabla a los lados para ver a todos. La primera columna queda fija. Los totales combinan dinero acumulado y aciertos.</p>`;
 }
 
 function personHTML(players){
@@ -375,14 +404,24 @@ function personHTML(players){
     const betRows = myBets.map(({m,bet}) => {
       const fin = isFinished(m);
       const valid = isValidBet(bet,m);
+      const isMine = S.me && p.id === S.me.id;
+      const sc = getScore(m);
+      // partido no terminado y no es mi tarjeta → ocultar pronóstico
+      if(!fin && !isMine){
+        return `<div class="person-bet">
+          <span class="cell-pick hidden">${ic("lock")}</span>
+          <span class="pb-match">${m.team1} vs ${m.team2}
+            <div class="pb-meta">${limaDateStr(parseKickoff(m)).slice(5).replace("-","/")}</div></span>
+          <span class="pb-net zero">oculto</span>
+        </div>`;
+      }
       let net = "", ncls = "zero";
       if(fin && valid){
         const r = settle(m).rows.find(x=>x.bet.player_id===p.id);
         net = money(r.net); ncls = r.net>0?"pos":r.net<0?"neg":"zero";
       } else if(!valid){ net = "fuera de plazo"; }
       else { net = "pendiente"; }
-      const pickCls = !valid ? "invalid" : fin ? (bet.pick===outcome(m)?"hit":"miss") : "";
-      const sc = getScore(m);
+      const pickCls = !valid ? "invalid" : fin ? (bet.pick===outcome(m)?"hit":"miss") : "mine";
       return `<div class="person-bet">
         <span class="cell-pick ${pickCls}">${bet.pick}</span>
         <span class="pb-match">${m.team1} vs ${m.team2}
@@ -418,14 +457,17 @@ function viewPartidos(){
     html += ms.map(m=>{
       const sc = getScore(m);
       const mine = myBet(m);
+      const now = new Date();
+      const estado = isFinished(m) ? "done" : now >= lockTime(m) ? "live" : "open";
       let flag = "";
       if(mine){
         if(isFinished(m)){
           const ok = isValidBet(mine,m) && mine.pick===outcome(m);
           flag = `<span class="${ok?"hit":"miss"}">${ok?"✓":"✗"} ${mine.pick}</span>`;
-        } else flag = `<span class="mypick">${mine.pick}</span>`;
+        } else flag = `<span class="mypick">tú: ${mine.pick}</span>`;
       }
       return `<button class="mini-match" data-detail="${matchKey(m)}">
+        <span class="dot dot-${estado}" title="${estado}"></span>
         <span class="m1">${m.team1}</span>
         <span class="mini-score ${sc?"":"pending"}">${sc?`${sc[0]}–${sc[1]}`:fmtTime(parseKickoff(m))}</span>
         <span class="m2">${m.team2}</span>
@@ -438,7 +480,7 @@ function viewPartidos(){
 }
 
 /* ---------------- modales ---------------- */
-function openModal(html){ $("#modal-card").innerHTML = html; $("#modal").classList.remove("hidden"); }
+function openModal(html){ $("#modal-card").innerHTML = html; $("#modal").classList.remove("hidden"); paintIcons(); }
 function closeModal(){ $("#modal").classList.add("hidden"); }
 
 function openLogin(){
@@ -446,7 +488,7 @@ function openLogin(){
   openModal(`<div class="modal-title">¿Quién eres?</div>
     <div class="modal-sub">Elige tu nombre. La primera vez crearás tu PIN de 3 dígitos; luego entrarás con tu nombre + PIN.</div>
     <div class="player-list">
-      ${list.map(p=>`<button class="player-btn" data-login="${p.id}">${p.name} <span>${p.pin?"🔒":"✨ primera vez"}</span></button>`).join("") || `<p class="hint">Aún no hay jugadores. El administrador debe agregarlos (ver README).</p>`}
+      ${list.map(p=>`<button class="player-btn" data-login="${p.id}">${p.name} <span>${p.pin?ic("lock"):"primera vez"}</span></button>`).join("") || `<p class="hint">Aún no hay jugadores. El administrador debe agregarlos (ver README).</p>`}
     </div>`);
   document.querySelectorAll("[data-login]").forEach(b => b.onclick = () => {
     const p = S.players.find(x=>x.id===b.dataset.login);
@@ -474,7 +516,7 @@ function createPin(p, changing=false){
     await loadDB();
     setSession(S.players.find(x=>x.id===p.id));
     closeModal();
-    toast(changing ? "PIN actualizado 🔒" : `¡Listo, ${p.name}! Ya puedes apostar ⚽`);
+    toast(changing ? "PIN actualizado" : `¡Listo, ${p.name}! Ya puedes apostar`);
   };
   $("#pin-back").onclick = changing ? openProfile : openLogin;
 }
@@ -489,7 +531,7 @@ function askPin(p){
   $("#pin-input").focus();
   $("#pin-input").addEventListener("keydown", e => { if(e.key==="Enter") $("#pin-ok").click(); });
   $("#pin-ok").onclick = () => {
-    if($("#pin-input").value === p.pin){ setSession(p); closeModal(); toast(`¡Hola, ${p.name}! ⚽`); }
+    if($("#pin-input").value === p.pin){ setSession(p); closeModal(); toast(`¡Hola, ${p.name}!`); }
     else toast("PIN incorrecto");
   };
   $("#pin-back").onclick = openLogin;
@@ -500,7 +542,7 @@ function openProfile(){
   const st = standings().find(e=>e.player.id===S.me.id);
   openModal(`<div class="modal-title">${S.me.name}</div>
     <div class="modal-sub">${st ? `Acumulado: <b>${money(st.net)}</b> · ${st.hits} aciertos en ${st.played} apuestas` : "Aún sin apuestas liquidadas"}</div>
-    ${S.me.is_admin ? `<button class="btn btn-primary" id="btn-admin">⚙️ Panel de administrador</button>` : ""}
+    ${S.me.is_admin ? `<button class="btn btn-primary" id="btn-admin">${ic("settings")} Panel de administrador</button>` : ""}
     <button class="btn btn-ghost" id="btn-mypin">Cambiar mi PIN</button>
     <button class="btn btn-ghost" id="btn-switch">Cambiar de jugador</button>
     <p class="hint">Las apuestas cierran ${CONFIG.LOCK_MINUTES} min antes de cada partido (hora del servidor). Los pronósticos de todos se revelan recién al cierre.</p>`);
@@ -510,16 +552,16 @@ function openProfile(){
 }
 
 function openAdmin(){
-  openModal(`<div class="modal-title">⚙️ Administrador</div>
+  openModal(`<div class="modal-title">${ic("settings")} Administrador</div>
     <div class="modal-sub">Agregar jugador (cada uno creará su PIN al entrar por primera vez)</div>
     <div class="modal-row">
       <input class="input" id="np-name" placeholder="Nombre (ej. Carlos R.)">
       <button class="btn btn-primary" style="width:auto;padding:0 18px" id="np-add">Agregar</button>
     </div>
-    <div class="modal-sub" style="margin-top:14px">Jugadores · toca el nombre para activar/desactivar · 🔑 reinicia su PIN</div>
+    <div class="modal-sub" style="margin-top:14px">Jugadores · toca el nombre para activar/desactivar · toca la llave para reiniciar su PIN</div>
     <div class="player-list admin-list">
       ${S.players.map(p=>`<button class="player-btn" data-tg="${p.id}">${p.name}
-        <span>${p.is_admin?'<span class="tag-admin">ADMIN</span> ':''}${p.active?'':'<span class="tag-off">INACTIVO</span> '}${p.pin?`<span class="pin-reset" data-rp="${p.id}" title="Reiniciar PIN">🔑↺</span>`:'<span class="tag-off">SIN PIN</span>'}</span></button>`).join("")}
+        <span>${p.is_admin?'<span class="tag-admin">ADMIN</span> ':''}${p.active?'':'<span class="tag-off">INACTIVO</span> '}${p.pin?`<span class="pin-reset" data-rp="${p.id}" title="Reiniciar PIN">${ic("key-round")}</span>`:'<span class="tag-off">SIN PIN</span>'}</span></button>`).join("")}
     </div>
     <div class="modal-sub" style="margin-top:14px">Corregir un resultado (si la fuente falla)</div>
     <p class="hint">Abre el partido desde la pestaña “Partidos” y usa el botón “Corregir resultado”.</p>
@@ -536,7 +578,7 @@ function openAdmin(){
     const p = S.players.find(x=>x.id===el.dataset.rp);
     if(!confirm(`¿Reiniciar el PIN de ${p.name}? Creará uno nuevo al entrar.`)) return;
     await db.from("players").update({ pin: null }).eq("id", p.id);
-    await loadDB(); toast(`PIN de ${p.name} reiniciado 🔑`); openAdmin();
+    await loadDB(); toast(`PIN de ${p.name} reiniciado`); openAdmin();
   });
   document.querySelectorAll("[data-tg]").forEach(b => b.onclick = async () => {
     const p = S.players.find(x=>x.id===b.dataset.tg);
@@ -548,7 +590,7 @@ function openAdmin(){
 
 function openMatchDetail(key){
   const m = S.matches.find(x=>matchKey(x)===key); if(!m) return;
-  const adminBtn = S.me && S.me.is_admin ? `<button class="btn btn-ghost" id="fix-result">✏️ Corregir resultado</button>` : "";
+  const adminBtn = S.me && S.me.is_admin ? `<button class="btn btn-ghost" id="fix-result">${ic("pencil")} Corregir resultado</button>` : "";
   openModal(`<div style="margin:-6px -4px 0">${ticketHTML(m)}</div>${adminBtn}
     <button class="btn btn-ghost" id="det-close">Cerrar</button>`);
   $("#det-close").onclick = closeModal;
@@ -568,7 +610,7 @@ function openMatchDetail(key){
       const s1 = parseInt($("#ov1").value,10), s2 = parseInt($("#ov2").value,10);
       if(isNaN(s1)||isNaN(s2)){ toast("Ingresa ambos marcadores"); return; }
       await db.from("result_overrides").upsert({ match_key:key, score1:s1, score2:s2 });
-      await loadDB(); render(); closeModal(); toast("Resultado corregido ✏️");
+      await loadDB(); render(); closeModal(); toast("Resultado corregido");
     };
     $("#ov-del").onclick = async () => {
       await db.from("result_overrides").delete().eq("match_key", key);
@@ -599,6 +641,7 @@ function bindView(){
 let toastTimer;
 function toast(msg){
   const t = $("#toast"); t.textContent = msg; t.classList.remove("hidden");
+  paintIcons();
   clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.classList.add("hidden"), 2600);
 }
 
@@ -612,15 +655,17 @@ $("#btn-user").onclick = openProfile;
 $("#modal").addEventListener("click", e => { if(e.target.id==="modal") closeModal(); });
 
 (async function init(){
+  paintIcons(); // header y tabs estáticos del HTML
   try{
     await loadAll();
     restoreSession();
     render();
     if(!S.me) openLogin();
   }catch(err){
-    $("#view").innerHTML = `<div class="empty"><span class="big">⚠️</span>No se pudo cargar la app.<br>
+    $("#view").innerHTML = `<div class="empty"><span class="big">${ic("alert-triangle")}</span>No se pudo cargar la app.<br>
       Revisa que <b>config.js</b> tenga tu URL y ANON KEY de Supabase y que hayas ejecutado <b>schema.sql</b>.<br>
       <small>${err.message||err}</small></div>`;
+    paintIcons();
     console.error(err);
   }
 
