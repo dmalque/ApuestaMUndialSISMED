@@ -240,12 +240,16 @@ function ticketHTML(m, opts={}){
         <span class="score-mid">${score ? `${score[0]} – ${score[1]}` : `<span class="vs">VS</span>`}</span>
         <span class="team t2">${m.team2}</span>
       </div>
-      ${fin ? `<div class="ticket-meta">Final · resultado: <b>${stl.res==="X"?"Empate":(stl.res==="1"?m.team1:m.team2)}</b></div>`:""}
-      <div class="picks">
-        ${chip("1", m.team1.length>11 ? "Local" : m.team1)}
-        ${chip("X","Empate")}
-        ${chip("2", m.team2.length>11 ? "Visita" : m.team2)}
-      </div>
+      ${fin
+        ? `<div class="result-line">
+             <span class="rl-tag">${ic("flag")} ${stl.res==="X"?"Empate":`Ganó ${stl.res==="1"?m.team1:m.team2}`}</span>
+             ${mine ? `<span class="rl-mine ${isValidBet(mine,m)&&mine.pick===stl.res?"ok":"no"}">${isValidBet(mine,m)&&mine.pick===stl.res?ic("check"):ic("x")} apostaste ${mine.pick}</span>` : `<span class="rl-mine muted">no apostaste</span>`}
+           </div>`
+        : `<div class="picks">
+             ${chip("1", m.team1.length>11 ? "Local" : m.team1)}
+             ${chip("X","Empate")}
+             ${chip("2", m.team2.length>11 ? "Visita" : m.team2)}
+           </div>`}
       ${foot}${strip}
     </div>
   </article>`;
