@@ -207,8 +207,10 @@ const pickLabel = (pick,m) => pick==="1" ? `Gana ${m.team1}` : pick==="2" ? `Gan
 
 async function closeDay(day){
   if(!S.me) return;
-  const misApuestas = S.matches.filter(m=>limaDateStr(parseKickoff(m))===day && myBet(m)).length;
-  if(!confirm(`¿Cerrar tus apuestas del día?\n\nTienes ${misApuestas} apuesta(s) registrada(s). Una vez cerrado NO podrás cambiarlas ni agregar más para hoy.`)) return;
+  const dayMatches = S.matches.filter(m=>limaDateStr(parseKickoff(m))===day);
+  const misApuestas = dayMatches.filter(m=>myBet(m)).length;
+  const fechaTxt = dayMatches.length ? fmtDay(parseKickoff(dayMatches[0])) : day;
+  if(!confirm(`¿Cerrar tus apuestas del ${fechaTxt}?\n\nTienes ${misApuestas} apuesta(s) registrada(s) ese día. Una vez cerrado NO podrás cambiarlas ni agregar más para esa fecha.`)) return;
   const { error } = await db.from("day_locks").upsert({ player_id:S.me.id, day }, { onConflict:"player_id,day" });
   if(error){ toast("Error al cerrar el día"); return; }
   await loadDB(); render();
@@ -315,58 +317,76 @@ function ticketHTML(m, opts={}){
   </article>`;
 }
 
+function dayBlockHTML(day, esHoy){
+  const ms = S.matches.filter(m => limaDateStr(parseKickoff(m)) === day);
+  if(!ms.length) return "";
+  const manual = lockMode()==="manual";
+  const iLocked = manual && S.me && dayLocked(day, S.me.id);
+  const fecha = parseKickoff(ms[0]);
+  let html = `<div class="section-label">${ic("calendar-days")} ${esHoy ? "Hoy · " : ""}${fmtDay(fecha)}</div>`;
+
+  // Banner / botón de cierre de ESTE día (solo modo manual y si tengo apuestas o partidos pendientes)
+  if(manual && S.me){
+    const pendientes = ms.filter(m=>!isFinished(m));
+    const misApuestas = ms.filter(m=>myBet(m)).length;
+    if(iLocked){
+      html += `<div class="day-lock-banner locked">${ic("lock")} <div><b>Cerraste tus apuestas de este día</b><div class="dl-sub">Ya no puedes cambiarlas. ${misApuestas} ${misApuestas===1?"apuesta registrada":"apuestas registradas"}.</div></div></div>`;
+    } else if(pendientes.length){
+      html += `<div class="day-lock-banner open">
+        <div class="dl-info">${ic("info")} <span>Puedes cambiar tus apuestas hasta que cierres este día o inicie cada partido.</span></div>
+        <button class="dl-btn btn-close-day" data-day="${day}">${ic("lock")} Cerrar mis apuestas de ${esHoy?"hoy":"este día"} (${misApuestas})</button>
+      </div>`;
+    }
+  }
+
+  const abiertos  = ms.filter(m => !isFinished(m) && canBet(m));
+  const enJuego   = ms.filter(m => !isFinished(m) && !canBet(m));
+  const terminados= ms.filter(m => isFinished(m));
+  if(abiertos.length){
+    html += `<div class="status-band open">${ic("circle")} ${manual?"Disponibles para apostar":"Abiertos para apostar"}</div>`;
+    html += abiertos.map(m=>ticketHTML(m)).join("");
+  }
+  if(enJuego.length){
+    html += `<div class="status-band live">${ic("lock")} ${iLocked?"Cerrados por ti":"En juego · por confirmar resultado"}</div>`;
+    html += enJuego.map(m=>ticketHTML(m)).join("");
+  }
+  if(terminados.length){
+    html += `<div class="status-band done">${ic("check-circle-2")} Terminados</div>`;
+    html += terminados.map(m=>ticketHTML(m)).join("");
+  }
+  return html;
+}
+
 function viewHoy(){
   const today = limaDateStr(new Date());
-  const todays = S.matches.filter(m => limaDateStr(parseKickoff(m)) === today);
   let html = "";
   if(!S.me){
     html += `<div class="empty"><span class="big">${ic("ticket")}</span>Para apostar, primero <b>entra con tu nombre</b> tocando el botón azul de arriba.</div>`;
   }
+  const todays = S.matches.filter(m => limaDateStr(parseKickoff(m)) === today);
   if(todays.length){
-    const manual = lockMode()==="manual";
-    const iLocked = manual && S.me && dayLocked(today, S.me.id);
-    html += `<div class="section-label">${ic("calendar-days")} Hoy · ${fmtDay(new Date())}</div>`;
-
-    // Banner / botón de cierre de día (solo modo manual)
-    if(manual && S.me){
-      const pendientes = todays.filter(m=>!isFinished(m));
-      const misApuestas = todays.filter(m=>myBet(m)).length;
-      if(iLocked){
-        html += `<div class="day-lock-banner locked">${ic("lock")} <div><b>Cerraste tus apuestas de hoy</b><div class="dl-sub">Ya no puedes cambiarlas. ${misApuestas} ${misApuestas===1?"apuesta registrada":"apuestas registradas"}.</div></div></div>`;
-      } else if(pendientes.length){
-        html += `<div class="day-lock-banner open">
-          <div class="dl-info">${ic("info")} <span>Puedes cambiar tus apuestas hasta que cierres el día o inicie cada partido.</span></div>
-          <button class="dl-btn" id="btn-close-day" data-day="${today}">${ic("lock")} Cerrar mis apuestas de hoy (${misApuestas})</button>
-        </div>`;
-      }
-    }
-
-    const abiertos  = todays.filter(m => !isFinished(m) && canBet(m));
-    const enJuego   = todays.filter(m => !isFinished(m) && !canBet(m));
-    const terminados= todays.filter(m => isFinished(m));
-    if(abiertos.length){
-      html += `<div class="status-band open">${ic("circle")} ${manual?"Disponibles para apostar":"Abiertos para apostar"}</div>`;
-      html += abiertos.map(m=>ticketHTML(m)).join("");
-    }
-    if(enJuego.length){
-      html += `<div class="status-band live">${ic("lock")} ${iLocked?"Cerrados por ti":"En juego · por confirmar resultado"}</div>`;
-      html += enJuego.map(m=>ticketHTML(m)).join("");
-    }
-    if(terminados.length){
-      html += `<div class="status-band done">${ic("check-circle-2")} Terminados</div>`;
-      html += terminados.map(m=>ticketHTML(m)).join("");
-    }
+    html += dayBlockHTML(today, true);
   } else {
     html += `<div class="empty"><span class="big">${ic("moon")}</span>Hoy no hay partidos.</div>`;
   }
-  // próximos (siguiente día con partidos)
-  const next = S.matches.filter(m => limaDateStr(parseKickoff(m)) > today && !isFinished(m));
-  if(next.length){
-    const nd = limaDateStr(parseKickoff(next[0]));
-    const nextDay = next.filter(m => limaDateStr(parseKickoff(m)) === nd);
-    html += `<div class="section-label">${ic("calendar-days")} Puedes ir apostando · ${fmtDay(parseKickoff(nextDay[0]))}</div>`;
-    html += nextDay.map(m=>ticketHTML(m)).join("");
+
+  // Días futuros con partidos: cada uno con su propio bloque y botón de cierre
+  // (se limita a los próximos días para no listar todo el torneo de golpe)
+  const HORIZONTE_DIAS = 4;
+  const futureDays = [...new Set(
+    S.matches
+      .filter(m => limaDateStr(parseKickoff(m)) > today && !isFinished(m))
+      .map(m => limaDateStr(parseKickoff(m)))
+  )].sort().slice(0, HORIZONTE_DIAS);
+
+  futureDays.forEach(day => { html += dayBlockHTML(day, false); });
+
+  // Aviso si hay más días por venir más allá del horizonte
+  const totalFuturos = new Set(S.matches.filter(m => limaDateStr(parseKickoff(m)) > today && !isFinished(m)).map(m => limaDateStr(parseKickoff(m)))).size;
+  if(totalFuturos > HORIZONTE_DIAS){
+    html += `<p class="hint" style="text-align:center;margin-top:14px">${ic("calendar-days")} Los partidos de días más lejanos aparecerán aquí cuando se acerquen. Puedes verlos todos en la pestaña Partidos.</p>`;
   }
+
   return html;
 }
 
@@ -722,8 +742,7 @@ function bindView(){
   document.querySelectorAll("[data-rmode]").forEach(b => b.onclick = () => {
     S.resumenMode = b.dataset.rmode; render(); window.scrollTo({top:0});
   });
-  const cd = $("#btn-close-day");
-  if(cd) cd.onclick = () => closeDay(cd.dataset.day);
+  document.querySelectorAll(".btn-close-day").forEach(b => b.onclick = () => closeDay(b.dataset.day));
   if(S.tab==="partidos"){
     const a = $("#today-anchor");
     if(a) a.scrollIntoView({block:"start"});
