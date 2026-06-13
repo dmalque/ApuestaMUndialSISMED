@@ -10,6 +10,8 @@ const S = {
   bets: [],         // todas las apuestas
   players: [],      // jugadores
   overrides: {},    // correcciones manuales de resultados {match_key:{score1,score2}}
+  settings: {lock_mode:"auto"}, // ajustes globales
+  dayLocks: [],     // cierres de día por usuario [{player_id, day}]
   me: null,         // jugador en sesión
   tab: "hoy",
   resumenMode: "matriz",   // "matriz" | "persona"
@@ -32,6 +34,26 @@ function parseKickoff(m){
   return new Date(`${m.date}T${t[1].padStart(2,"0")}:${t[2]}:00${offStr}`);
 }
 const lockTime = (m) => new Date(parseKickoff(m).getTime() - CONFIG.LOCK_MINUTES*60000);
+
+// modo de cierre global: 'auto' (1h antes de cada partido) o 'manual' (cada usuario cierra su día)
+const lockMode = () => (S.settings && S.settings.lock_mode) === "manual" ? "manual" : "auto";
+
+// ¿el jugador `pid` cerró el día `day` ('YYYY-MM-DD')?
+const dayLocked = (day, pid) => S.dayLocks.some(l => l.day===day && l.player_id===pid);
+
+// ¿puedo todavía apostar/cambiar en este partido? (depende del modo)
+function canBet(m, pid){
+  pid = pid || (S.me && S.me.id);
+  if(!pid) return false;
+  if(isFinished(m)) return false;
+  if(lockMode()==="manual"){
+    const day = limaDateStr(parseKickoff(m));
+    if(dayLocked(day, pid)) return false;          // ya cerró su día
+    return new Date() < parseKickoff(m);           // aún no inicia el partido
+  }
+  // modo auto
+  return new Date() < lockTime(m);
+}
 
 const fmtTime = (d) => new Intl.DateTimeFormat("es-PE",{timeZone:CONFIG.TIMEZONE,hour:"2-digit",minute:"2-digit",hour12:true}).format(d);
 const fmtDay  = (d) => new Intl.DateTimeFormat("es-PE",{timeZone:CONFIG.TIMEZONE,weekday:"long",day:"numeric",month:"long"}).format(d);
@@ -118,15 +140,19 @@ async function loadMatches(){
   S.matches = (data.matches||[]).slice().sort((a,b)=> parseKickoff(a)-parseKickoff(b));
 }
 async function loadDB(){
-  const [p,b,o] = await Promise.all([
+  const [p,b,o,s,d] = await Promise.all([
     db.from("players").select("*").order("name"),
     db.from("bets").select("*"),
     db.from("result_overrides").select("*"),
+    db.from("settings").select("*"),
+    db.from("day_locks").select("*"),
   ]);
   if(p.error||b.error||o.error) throw (p.error||b.error||o.error);
   S.players = p.data; S.bets = b.data;
   S.overrides = {};
   o.data.forEach(x => S.overrides[x.match_key] = x);
+  if(s && !s.error && s.data){ s.data.forEach(x => S.settings[x.key] = x.value); }
+  S.dayLocks = (d && !d.error && d.data) ? d.data : [];
 }
 async function loadAll(){
   await Promise.all([loadMatches(), loadDB()]);
@@ -152,26 +178,25 @@ function renderUserChip(){
 /* ---------------- acciones ---------------- */
 async function placeBet(m, pick){
   if(!S.me){ openLogin(); return; }
-  if(new Date() > lockTime(m)){ toast("Las apuestas para este partido ya cerraron"); render(); return; }
+  if(!canBet(m)){
+    toast(lockMode()==="manual" && dayLocked(limaDateStr(parseKickoff(m)), S.me.id)
+      ? "Ya cerraste tus apuestas de este día"
+      : "Las apuestas para este partido ya cerraron");
+    render(); return;
+  }
   const key = matchKey(m);
   const prev = myBet(m);
 
   // si toco el mismo pick que ya tenía → desmarcar (eliminar la apuesta)
   if(prev && prev.pick === pick){
-    S.bets = S.bets.filter(b => !(b.player_id===S.me.id && b.match_key===key));
-    render();
     const { error } = await db.from("bets").delete().eq("player_id", S.me.id).eq("match_key", key);
-    if(error){ toast("Error al quitar la apuesta"); await loadDB(); render(); return; }
+    if(error){ toast("Error al quitar la apuesta"); return; }
     await loadDB(); render();
     toast("Apuesta eliminada · no apostarás este partido");
     return;
   }
 
-  // optimista
-  if(prev){ prev.pick = pick; } else {
-    S.bets.push({player_id:S.me.id, match_key:key, pick, updated_at:new Date().toISOString()});
-  }
-  render();
+  // crear o cambiar
   const { error } = await db.from("bets")
     .upsert({ player_id:S.me.id, match_key:key, pick }, { onConflict:"player_id,match_key" });
   if(error){ toast("Error al guardar, intenta de nuevo"); await loadDB(); render(); return; }
@@ -179,6 +204,16 @@ async function placeBet(m, pick){
   toast(`✓ Apuesta registrada: ${pickLabel(pick, m)} (${CONFIG.CURRENCY} ${CONFIG.STAKE.toFixed(2)})`);
 }
 const pickLabel = (pick,m) => pick==="1" ? `Gana ${m.team1}` : pick==="2" ? `Gana ${m.team2}` : "Empate";
+
+async function closeDay(day){
+  if(!S.me) return;
+  const misApuestas = S.matches.filter(m=>limaDateStr(parseKickoff(m))===day && myBet(m)).length;
+  if(!confirm(`¿Cerrar tus apuestas del día?\n\nTienes ${misApuestas} apuesta(s) registrada(s). Una vez cerrado NO podrás cambiarlas ni agregar más para hoy.`)) return;
+  const { error } = await db.from("day_locks").upsert({ player_id:S.me.id, day }, { onConflict:"player_id,day" });
+  if(error){ toast("Error al cerrar el día"); return; }
+  await loadDB(); render();
+  toast("Apuestas del día cerradas");
+}
 
 /* ---------------- render ---------------- */
 function render(){
@@ -196,12 +231,14 @@ function ticketHTML(m, opts={}){
   const key = matchKey(m);
   const ko = parseKickoff(m), lk = lockTime(m), now = new Date();
   const fin = isFinished(m);
-  const open = !fin && now < lk;
   const score = getScore(m);
   const mine = myBet(m);
   const allBets = betsFor(m);
   const validCount = allBets.filter(b=>isValidBet(b,m)).length;
-  const pot = (open ? allBets.length : validCount) * CONFIG.STAKE;
+  const day = limaDateStr(parseKickoff(m));
+  const iLockedDay = lockMode()==="manual" && S.me && dayLocked(day, S.me.id);
+  const open = canBet(m);      // "abierto" = puedo apostar/cambiar este partido
+  const pot = (allBets.length) * CONFIG.STAKE;
   const stl = fin ? settle(m) : null;
 
   const chip = (pk, label) => {
@@ -213,12 +250,17 @@ function ticketHTML(m, opts={}){
 
   let foot = "";
   if(open){
-    const mins = Math.max(0, Math.round((lk - now)/60000));
-    const t = mins >= 60 ? `${Math.floor(mins/60)} h ${mins%60} min` : `${mins} min`;
-    foot = `<div class="lock-note open">${ic("circle")} Cierra en <b>&nbsp;${t}</b> · ${ic("users")} ${allBets.length} ${allBets.length===1?"apuesta":"apuestas"}</div>`;
+    if(lockMode()==="manual"){
+      foot = `<div class="lock-note open">${ic("circle")} Apuestas abiertas · ${ic("users")} ${allBets.length} ${allBets.length===1?"apuesta":"apuestas"}</div>`;
+    } else {
+      const mins = Math.max(0, Math.round((lk - now)/60000));
+      const t = mins >= 60 ? `${Math.floor(mins/60)} h ${mins%60} min` : `${mins} min`;
+      foot = `<div class="lock-note open">${ic("circle")} Cierra en <b>&nbsp;${t}</b> · ${ic("users")} ${allBets.length} ${allBets.length===1?"apuesta":"apuestas"}</div>`;
+    }
     if(mine) foot += `<div class="lock-note hint-undo">${ic("info")} Toca de nuevo tu opción para desmarcarla</div>`;
   } else if(!fin){
-    foot = `<div class="lock-note closed">${ic("lock")} Apuestas cerradas · ${now>=ko ? "partido en juego o por confirmar resultado" : "inicia " + fmtTime(ko)}</div>`;
+    if(iLockedDay) foot = `<div class="lock-note closed">${ic("lock")} Cerraste tus apuestas de este día</div>`;
+    else foot = `<div class="lock-note closed">${ic("lock")} Apuestas cerradas · ${now>=ko ? "partido en juego o por confirmar resultado" : "inicia " + fmtTime(ko)}</div>`;
   }
 
   let strip = "";
@@ -281,17 +323,33 @@ function viewHoy(){
     html += `<div class="empty"><span class="big">${ic("ticket")}</span>Para apostar, primero <b>entra con tu nombre</b> tocando el botón azul de arriba.</div>`;
   }
   if(todays.length){
-    const now = new Date();
-    const abiertos  = todays.filter(m => !isFinished(m) && now < lockTime(m));
-    const enJuego   = todays.filter(m => !isFinished(m) && now >= lockTime(m));
+    const manual = lockMode()==="manual";
+    const iLocked = manual && S.me && dayLocked(today, S.me.id);
+    html += `<div class="section-label">${ic("calendar-days")} Hoy · ${fmtDay(new Date())}</div>`;
+
+    // Banner / botón de cierre de día (solo modo manual)
+    if(manual && S.me){
+      const pendientes = todays.filter(m=>!isFinished(m));
+      const misApuestas = todays.filter(m=>myBet(m)).length;
+      if(iLocked){
+        html += `<div class="day-lock-banner locked">${ic("lock")} <div><b>Cerraste tus apuestas de hoy</b><div class="dl-sub">Ya no puedes cambiarlas. ${misApuestas} ${misApuestas===1?"apuesta registrada":"apuestas registradas"}.</div></div></div>`;
+      } else if(pendientes.length){
+        html += `<div class="day-lock-banner open">
+          <div class="dl-info">${ic("info")} <span>Puedes cambiar tus apuestas hasta que cierres el día o inicie cada partido.</span></div>
+          <button class="dl-btn" id="btn-close-day" data-day="${today}">${ic("lock")} Cerrar mis apuestas de hoy (${misApuestas})</button>
+        </div>`;
+      }
+    }
+
+    const abiertos  = todays.filter(m => !isFinished(m) && canBet(m));
+    const enJuego   = todays.filter(m => !isFinished(m) && !canBet(m));
     const terminados= todays.filter(m => isFinished(m));
-    html += `<div class="section-label">${ic("volleyball")} Hoy · ${fmtDay(new Date())}</div>`;
     if(abiertos.length){
-      html += `<div class="status-band open">${ic("circle")} Abiertos para apostar</div>`;
+      html += `<div class="status-band open">${ic("circle")} ${manual?"Disponibles para apostar":"Abiertos para apostar"}</div>`;
       html += abiertos.map(m=>ticketHTML(m)).join("");
     }
     if(enJuego.length){
-      html += `<div class="status-band live">${ic("lock")} En juego · por confirmar resultado</div>`;
+      html += `<div class="status-band live">${ic("lock")} ${iLocked?"Cerrados por ti":"En juego · por confirmar resultado"}</div>`;
       html += enJuego.map(m=>ticketHTML(m)).join("");
     }
     if(terminados.length){
@@ -564,8 +622,19 @@ function openProfile(){
 }
 
 function openAdmin(){
+  const mode = lockMode();
   openModal(`<div class="modal-title">${ic("settings")} Administrador</div>
-    <div class="modal-sub">Agregar jugador (cada uno creará su PIN al entrar por primera vez)</div>
+
+    <div class="modal-sub">Modo de cierre de apuestas</div>
+    <div class="seg mode-seg">
+      <button data-mode="auto" class="${mode==="auto"?"active":""}">${ic("clock")} 1 h antes de cada partido</button>
+      <button data-mode="manual" class="${mode==="manual"?"active":""}">${ic("hand")} Cada usuario cierra su día</button>
+    </div>
+    <p class="hint" style="margin-top:0">${mode==="auto"
+      ? "Automático: cada apuesta se bloquea 1 hora antes de su partido."
+      : "Manual: aparece un botón “Cerrar mis apuestas de hoy” para cada jugador; mientras no lo use (y el partido no inicie), puede cambiar sus apuestas."}</p>
+
+    <div class="modal-sub" style="margin-top:16px">Agregar jugador (cada uno creará su PIN al entrar por primera vez)</div>
     <div class="modal-row">
       <input class="input" id="np-name" placeholder="Nombre (ej. Carlos R.)">
       <button class="btn btn-primary" style="width:auto;padding:0 18px" id="np-add">Agregar</button>
@@ -579,6 +648,15 @@ function openAdmin(){
     <p class="hint">Abre el partido desde la pestaña “Partidos” y usa el botón “Corregir resultado”.</p>
     <button class="btn btn-ghost" id="adm-back">Cerrar</button>`);
   $("#adm-back").onclick = closeModal;
+  document.querySelectorAll("[data-mode]").forEach(b => b.onclick = async () => {
+    const val = b.dataset.mode;
+    if(val === lockMode()) return;
+    const { error } = await db.from("settings").upsert({ key:"lock_mode", value:val }, { onConflict:"key" });
+    if(error){ toast("Error al cambiar el modo"); return; }
+    S.settings.lock_mode = val;
+    await loadDB(); openAdmin(); render();
+    toast(val==="manual" ? "Modo manual activado" : "Modo automático (1 h antes) activado");
+  });
   $("#np-add").onclick = async () => {
     const name = $("#np-name").value.trim(); if(!name) return;
     const { error } = await db.from("players").insert({ name });
@@ -644,6 +722,8 @@ function bindView(){
   document.querySelectorAll("[data-rmode]").forEach(b => b.onclick = () => {
     S.resumenMode = b.dataset.rmode; render(); window.scrollTo({top:0});
   });
+  const cd = $("#btn-close-day");
+  if(cd) cd.onclick = () => closeDay(cd.dataset.day);
   if(S.tab==="partidos"){
     const a = $("#today-anchor");
     if(a) a.scrollIntoView({block:"start"});
@@ -686,6 +766,8 @@ $("#modal").addEventListener("click", e => { if(e.target.id==="modal") closeModa
     db.channel("rt-bets")
       .on("postgres_changes",{event:"*",schema:"public",table:"bets"}, async ()=>{ await loadDB(); render(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"result_overrides"}, async ()=>{ await loadDB(); render(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, async ()=>{ await loadDB(); render(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"day_locks"}, async ()=>{ await loadDB(); render(); })
       .subscribe();
   }catch(e){ /* opcional */ }
 
