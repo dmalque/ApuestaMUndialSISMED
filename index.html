@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#122019">
+<title>Fiebre Mundial 26 · Polla de oficina</title>
+<meta name="description" content="Polla mundialista de la oficina · Mundial 2026">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Archivo+Black&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚽</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-ball">⚽</span>
+    <div class="brand-text">
+      <span class="brand-title">FIEBRE&nbsp;MUNDIAL</span>
+      <span class="brand-year">26 · POLLA DE OFICINA · S/1 POR PARTIDO</span>
+    </div>
+  </div>
+  <button id="btn-user" class="user-chip" title="Mi cuenta">—</button>
+</header>
+
+<main id="view" class="view">
+  <div class="loading-state">
+    <div class="spinner"></div>
+    <p>Cargando partidos del Mundial…</p>
+  </div>
+</main>
+
+<nav class="tabbar" role="tablist">
+  <button class="tab active" data-tab="hoy"   role="tab"><span class="tab-ico">🎟️</span>Hoy</button>
+  <button class="tab" data-tab="tabla"        role="tab"><span class="tab-ico">🏆</span>Tabla</button>
+  <button class="tab" data-tab="partidos"     role="tab"><span class="tab-ico">📅</span>Partidos</button>
+</nav>
+
+<!-- Modal genérico -->
+<div id="modal" class="modal hidden" aria-modal="true" role="dialog">
+  <div class="modal-card" id="modal-card"></div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
