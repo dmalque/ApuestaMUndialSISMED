@@ -5,7 +5,7 @@
 const CONFIG = {
   // 1) Pega aquí los datos de tu proyecto Supabase
   //    (Supabase → Settings → API)
-  SUPABASE_URL: "https://vtzkbpsvtygshktxvhrd.supabase.co/rest/v1/",
+  SUPABASE_URL: "https://vtzkbpsvtygshktxvhrd.supabase.co",
   SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0emticHN2dHlnc2hrdHh2aHJkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEzMDI0MTAsImV4cCI6MjA5Njg3ODQxMH0.cjl2wYZq9Io7S9GyZTDTlpIfA2R7ab-vYcNtIG8f7ew",
 
   // 2) Reglas de la polla
