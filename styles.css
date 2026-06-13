@@ -127,6 +127,7 @@ button:focus-visible, input:focus-visible{outline:3px solid var(--pitch);outline
 }
 .lock-note.open b{color:var(--pitch-deep)}
 .lock-note.closed{color:var(--loss)}
+.lock-note.hint-undo{margin-top:3px;color:#9AA6B8;font-size:.68rem}
 
 /* apuestas de los demás (tras el cierre) */
 .bets-strip{margin-top:10px;border-top:1px dashed var(--line);padding-top:9px}
@@ -231,10 +232,23 @@ button:focus-visible, input:focus-visible{outline:3px solid var(--pitch);outline
   width:46px;height:30px;border-radius:999px;transition:background .18s, transform .18s;
 }
 .tab .tab-ico .lucide{width:21px;height:21px;transition:transform .18s}
-.tab.active{color:var(--pitch-deep)}
-.tab.active .tab-ico{background:var(--pitch-tint)}
-.tab.active .tab-ico .lucide{color:var(--pitch-deep);transform:translateY(-1px)}
 .tab:active .tab-ico{transform:scale(.9)}
+
+/* color propio por pestaña (íconos siempre con tinte, vivos al activarse) */
+.tab-hoy      .tab-ico .lucide{color:#1E5BAA}
+.tab-tabla    .tab-ico .lucide{color:#B97509}
+.tab-resumen  .tab-ico .lucide{color:#7A3FB0}
+.tab-partidos .tab-ico .lucide{color:#0E8A5F}
+.tab{color:var(--ink-soft)}
+.tab.active.tab-hoy{color:#1E5BAA}
+.tab.active.tab-tabla{color:#B97509}
+.tab.active.tab-resumen{color:#7A3FB0}
+.tab.active.tab-partidos{color:#0E8A5F}
+.tab.active.tab-hoy      .tab-ico{background:#E5EEF9}
+.tab.active.tab-tabla    .tab-ico{background:#FCF3E0}
+.tab.active.tab-resumen  .tab-ico{background:#F1E8FA}
+.tab.active.tab-partidos .tab-ico{background:#E2F4ED}
+.tab.active .tab-ico .lucide{transform:translateY(-1px)}
 
 /* ---------- Toast ---------- */
 .toast{
@@ -347,6 +361,8 @@ table.matrix tfoot .col-match{background:var(--pitch-tint);z-index:2}
 svg.lucide{width:1em;height:1em;stroke-width:2.25}
 /* contextos específicos */
 .brand-ball .lucide{width:22px;height:22px;color:#fff;vertical-align:middle}
+.brand-ball .soccer{width:23px;height:23px;vertical-align:middle;fill:none;stroke:#fff;stroke-width:1.6;stroke-linejoin:round}
+.brand-ball .soccer path:first-of-type{fill:#fff;stroke:none}
 .tab-ico .lucide{width:21px;height:21px}
 .status-band .lucide{width:14px;height:14px;stroke-width:2.5}
 .lock-note .lucide{width:13px;height:13px}

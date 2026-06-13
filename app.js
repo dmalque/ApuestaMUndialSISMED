@@ -155,6 +155,18 @@ async function placeBet(m, pick){
   if(new Date() > lockTime(m)){ toast("Las apuestas para este partido ya cerraron"); render(); return; }
   const key = matchKey(m);
   const prev = myBet(m);
+
+  // si toco el mismo pick que ya tenía → desmarcar (eliminar la apuesta)
+  if(prev && prev.pick === pick){
+    S.bets = S.bets.filter(b => !(b.player_id===S.me.id && b.match_key===key));
+    render();
+    const { error } = await db.from("bets").delete().eq("player_id", S.me.id).eq("match_key", key);
+    if(error){ toast("Error al quitar la apuesta"); await loadDB(); render(); return; }
+    await loadDB(); render();
+    toast("Apuesta eliminada · no apostarás este partido");
+    return;
+  }
+
   // optimista
   if(prev){ prev.pick = pick; } else {
     S.bets.push({player_id:S.me.id, match_key:key, pick, updated_at:new Date().toISOString()});
@@ -204,6 +216,7 @@ function ticketHTML(m, opts={}){
     const mins = Math.max(0, Math.round((lk - now)/60000));
     const t = mins >= 60 ? `${Math.floor(mins/60)} h ${mins%60} min` : `${mins} min`;
     foot = `<div class="lock-note open">${ic("circle")} Cierra en <b>&nbsp;${t}</b> · ${ic("users")} ${allBets.length} ${allBets.length===1?"apuesta":"apuestas"}</div>`;
+    if(mine) foot += `<div class="lock-note hint-undo">${ic("info")} Toca de nuevo tu opción para desmarcarla</div>`;
   } else if(!fin){
     foot = `<div class="lock-note closed">${ic("lock")} Apuestas cerradas · ${now>=ko ? "partido en juego o por confirmar resultado" : "inicia " + fmtTime(ko)}</div>`;
   }
@@ -243,7 +256,12 @@ function ticketHTML(m, opts={}){
       ${fin
         ? `<div class="result-line">
              <span class="rl-tag">${ic("flag")} ${stl.res==="X"?"Empate":`Ganó ${stl.res==="1"?m.team1:m.team2}`}</span>
-             ${mine ? `<span class="rl-mine ${isValidBet(mine,m)&&mine.pick===stl.res?"ok":"no"}">${isValidBet(mine,m)&&mine.pick===stl.res?ic("check"):ic("x")} apostaste ${mine.pick}</span>` : `<span class="rl-mine muted">no apostaste</span>`}
+             ${(() => {
+                if(!mine) return `<span class="rl-mine muted">no apostaste</span>`;
+                if(!isValidBet(mine,m)) return `<span class="rl-mine muted">${ic("clock")} fuera de plazo</span>`;
+                const won = mine.pick===stl.res;
+                return `<span class="rl-mine ${won?"ok":"no"}">${won?ic("check"):ic("x")} ${won?"ganaste":"perdiste"}</span>`;
+             })()}
            </div>`
         : `<div class="picks">
              ${chip("1", m.team1.length>11 ? "Local" : m.team1)}
@@ -319,14 +337,15 @@ function matchesWithBets(){
   return S.matches.filter(m => betsFor(m).length > 0);
 }
 // celda de pronóstico de un jugador en un partido
-function cellInfo(m, playerId){
+// reveal=true (Resumen) muestra siempre; reveal=false (Hoy) oculta ajenas hasta terminar
+function cellInfo(m, playerId, reveal=false){
   const bet = betsFor(m).find(b => b.player_id === playerId);
   if(!bet) return { pick:null };
   const fin = isFinished(m);
   const valid = isValidBet(bet, m);
   const isMine = S.me && playerId === S.me.id;
   // si el partido no ha terminado, solo el propio jugador ve su pick; el resto queda oculto
-  if(!fin && !isMine) return { pick:"·", cls:"hidden", valid, fin, hidden:true };
+  if(!fin && !isMine && !reveal) return { pick:"·", cls:"hidden", valid, fin, hidden:true };
   let cls = "";
   if(!valid) cls = "invalid";
   else if(fin) cls = bet.pick === outcome(m) ? "hit" : "miss";
@@ -343,7 +362,6 @@ function viewResumen(){
   const legend = `<div class="legend">
     <span class="lg-dot"><span class="lg-pick">1</span> local · <span class="lg-pick">X</span> empate · <span class="lg-pick">2</span> visita</span>
     <span class="lg-dot"><span class="lg-pick hit">${ic("check")}</span> <b>acierto</b></span>
-    <span class="lg-dot"><span class="lg-pick hidden">${ic("lock")}</span> <b>se revela al terminar</b></span>
   </div>`;
   let body;
   if(!players.length) body = `<div class="empty"><span class="big">${ic("users")}</span>Aún no hay jugadores.</div>`;
@@ -366,7 +384,7 @@ function matrixHTML(players){
     const sc = getScore(m);
     const res = isFinished(m) ? `${sc[0]}–${sc[1]}` : fmtTime(parseKickoff(m));
     const cells = players.map(p => {
-      const c = cellInfo(m, p.id);
+      const c = cellInfo(m, p.id, true);
       if(!c.pick) return `<td><span class="cell-pick cell-empty">·</span></td>`;
       if(c.hidden) return `<td><span class="cell-pick hidden">${ic("lock")}</span></td>`;
       return `<td><span class="cell-pick ${c.cls}">${c.pick}</span></td>`;
@@ -408,17 +426,7 @@ function personHTML(players){
     const betRows = myBets.map(({m,bet}) => {
       const fin = isFinished(m);
       const valid = isValidBet(bet,m);
-      const isMine = S.me && p.id === S.me.id;
       const sc = getScore(m);
-      // partido no terminado y no es mi tarjeta → ocultar pronóstico
-      if(!fin && !isMine){
-        return `<div class="person-bet">
-          <span class="cell-pick hidden">${ic("lock")}</span>
-          <span class="pb-match">${m.team1} vs ${m.team2}
-            <div class="pb-meta">${limaDateStr(parseKickoff(m)).slice(5).replace("-","/")}</div></span>
-          <span class="pb-net zero">oculto</span>
-        </div>`;
-      }
       let net = "", ncls = "zero";
       if(fin && valid){
         const r = settle(m).rows.find(x=>x.bet.player_id===p.id);
