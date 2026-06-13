@@ -12,6 +12,7 @@ const S = {
   overrides: {},    // correcciones manuales de resultados {match_key:{score1,score2}}
   me: null,         // jugador en sesión
   tab: "hoy",
+  resumenMode: "matriz",   // "matriz" | "persona"
   ready: false,
 };
 
@@ -171,6 +172,7 @@ function render(){
   const v = $("#view");
   if(S.tab==="hoy") v.innerHTML = viewHoy();
   else if(S.tab==="tabla") v.innerHTML = viewTabla();
+  else if(S.tab==="resumen") v.innerHTML = viewResumen();
   else v.innerHTML = viewPartidos();
   bindView();
 }
@@ -281,6 +283,122 @@ function viewTabla(){
     </div>`;
   }).join("") + `</div>`;
   return html;
+}
+
+/* ----- RESUMEN: matriz y por persona ----- */
+
+// devuelve solo los partidos con al menos una apuesta, en orden cronológico
+function matchesWithBets(){
+  return S.matches.filter(m => betsFor(m).length > 0);
+}
+// celda de pronóstico de un jugador en un partido
+function cellInfo(m, playerId){
+  const bet = betsFor(m).find(b => b.player_id === playerId);
+  if(!bet) return { pick:null };
+  const fin = isFinished(m);
+  const valid = isValidBet(bet, m);
+  let cls = "";
+  if(!valid) cls = "invalid";
+  else if(fin) cls = bet.pick === outcome(m) ? "hit" : "miss";
+  return { pick: bet.pick, cls, valid, fin };
+}
+
+function viewResumen(){
+  const players = S.players.filter(p=>p.active);
+  const toggle = `<div class="seg">
+    <button data-rmode="matriz" class="${S.resumenMode==="matriz"?"active":""}">📋 Matriz</button>
+    <button data-rmode="persona" class="${S.resumenMode==="persona"?"active":""}">🧍 Por persona</button>
+  </div>`;
+  const legend = `<div class="legend">
+    <span class="lg-dot"><span class="lg-pick">1</span> local · <span class="lg-pick">X</span> empate · <span class="lg-pick">2</span> visita</span>
+    <span class="lg-dot"><span class="lg-pick hit">✓</span> <b>acierto</b></span>
+  </div>`;
+  let body;
+  if(!players.length) body = `<div class="empty"><span class="big">👥</span>Aún no hay jugadores.</div>`;
+  else if(!matchesWithBets().length) body = `<div class="empty"><span class="big">🎟️</span>Todavía no hay apuestas registradas.<br>Cuando alguien apueste, aquí verás el cuadro completo.</div>`;
+  else body = S.resumenMode==="matriz" ? matrixHTML(players) : personHTML(players);
+  return `<div class="section-label">Resumen de apuestas</div>${toggle}${legend}${body}`;
+}
+
+function matrixHTML(players){
+  const ms = matchesWithBets();
+  const st = standings();
+  const stMap = {}; st.forEach(e => stMap[e.player.id] = e);
+
+  const head = `<thead><tr>
+    <th class="col-match">Partido</th>
+    ${players.map(p=>`<th>${p.name.split(" ")[0]}</th>`).join("")}
+  </tr></thead>`;
+
+  const rows = ms.map(m => {
+    const sc = getScore(m);
+    const res = isFinished(m) ? `${sc[0]}–${sc[1]}` : fmtTime(parseKickoff(m));
+    const cells = players.map(p => {
+      const c = cellInfo(m, p.id);
+      if(!c.pick) return `<td><span class="cell-pick cell-empty">·</span></td>`;
+      return `<td><span class="cell-pick ${c.cls}">${c.pick}</span></td>`;
+    }).join("");
+    return `<tr>
+      <td class="col-match">
+        <div class="mt-team">${m.team1} <span class="mt-meta">vs</span> ${m.team2}</div>
+        <div class="mt-meta">${limaDateStr(parseKickoff(m)).slice(5).replace("-","/")} · ${res}</div>
+      </td>${cells}
+    </tr>`;
+  }).join("");
+
+  const foot = `<tfoot><tr>
+    <td class="col-match">TOTAL</td>
+    ${players.map(p=>{
+      const e = stMap[p.id] || {net:0,hits:0,played:0};
+      const cls = e.net>0?"pos":e.net<0?"neg":"zero";
+      return `<td><div class="foot-net ${cls}">${money(e.net)}</div><div class="foot-hits">${e.hits} ✓</div></td>`;
+    }).join("")}
+  </tr></tfoot>`;
+
+  return `<div class="matrix-wrap"><table class="matrix">${head}<tbody>${rows}</tbody>${foot}</table></div>
+    <p class="hint" style="margin-top:10px">Desliza la tabla → para ver a todos. La primera columna queda fija. Los totales combinan dinero acumulado y aciertos.</p>`;
+}
+
+function personHTML(players){
+  const st = standings();
+  const order = st.map(e=>e.player.id);
+  const ordered = players.slice().sort((a,b)=> order.indexOf(a.id) - order.indexOf(b.id));
+  const stMap = {}; st.forEach(e => stMap[e.player.id] = e);
+
+  return ordered.map(p => {
+    const e = stMap[p.id] || {net:0,hits:0,played:0};
+    const cls = e.net>0?"pos":e.net<0?"neg":"zero";
+    const myBets = matchesWithBets()
+      .map(m => ({ m, bet: betsFor(m).find(b=>b.player_id===p.id) }))
+      .filter(x => x.bet)
+      .sort((a,b)=> parseKickoff(b.m) - parseKickoff(a.m)); // más recientes arriba
+    const betRows = myBets.map(({m,bet}) => {
+      const fin = isFinished(m);
+      const valid = isValidBet(bet,m);
+      let net = "", ncls = "zero";
+      if(fin && valid){
+        const r = settle(m).rows.find(x=>x.bet.player_id===p.id);
+        net = money(r.net); ncls = r.net>0?"pos":r.net<0?"neg":"zero";
+      } else if(!valid){ net = "fuera de plazo"; }
+      else { net = "pendiente"; }
+      const pickCls = !valid ? "invalid" : fin ? (bet.pick===outcome(m)?"hit":"miss") : "";
+      const sc = getScore(m);
+      return `<div class="person-bet">
+        <span class="cell-pick ${pickCls}">${bet.pick}</span>
+        <span class="pb-match">${m.team1} vs ${m.team2}
+          <div class="pb-meta">${limaDateStr(parseKickoff(m)).slice(5).replace("-","/")}${sc?` · ${sc[0]}–${sc[1]}`:""}</div></span>
+        <span class="pb-net ${ncls}">${net}</span>
+      </div>`;
+    }).join("");
+    return `<div class="person-card">
+      <div class="person-head">
+        <span><span class="ph-name">${p.name}${S.me&&p.id===S.me.id?" (tú)":""}</span>
+          <div class="ph-sub">${e.hits} aciertos · ${myBets.length} apuestas</div></span>
+        <span class="ph-net ${cls}">${money(e.net)}</span>
+      </div>
+      ${betRows || `<div class="person-empty">Sin apuestas todavía</div>`}
+    </div>`;
+  }).join("");
 }
 
 function viewPartidos(){
@@ -469,6 +587,9 @@ function bindPicks(root){
 function bindView(){
   bindPicks($("#view"));
   document.querySelectorAll("[data-detail]").forEach(b => b.onclick = () => openMatchDetail(b.dataset.detail));
+  document.querySelectorAll("[data-rmode]").forEach(b => b.onclick = () => {
+    S.resumenMode = b.dataset.rmode; render(); window.scrollTo({top:0});
+  });
   if(S.tab==="partidos"){
     const a = $("#today-anchor");
     if(a) a.scrollIntoView({block:"start"});

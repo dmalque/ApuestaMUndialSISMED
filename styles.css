@@ -1,18 +1,18 @@
 /* ============================================================
    FIEBRE MUNDIAL 26 — estilos
-   Paleta: papel #F6F7F4 · tinta #122019 · cancha #0E7A46
-           ámbar dinero #B97509 · pérdida #C0392B
+   Paleta: papel #F5F6F9 · tinta #15233B · azul #1E5BAA
+           azul hondo #133B72 · ámbar dinero #B97509 · pérdida #C0392B
    ============================================================ */
 
 :root{
-  --paper:#F6F7F4;
+  --paper:#F5F6F9;
   --card:#FFFFFF;
-  --ink:#122019;
-  --ink-soft:#4A5A51;
-  --line:#DCE3DD;
-  --pitch:#0E7A46;
-  --pitch-deep:#0A5A34;
-  --pitch-tint:#E3F2E9;
+  --ink:#15233B;
+  --ink-soft:#4C5A72;
+  --line:#DBE1EC;
+  --pitch:#1E5BAA;
+  --pitch-deep:#133B72;
+  --pitch-tint:#E5EEF9;
   --money:#B97509;
   --money-tint:#FCF3E0;
   --loss:#C0392B;
@@ -48,7 +48,7 @@ button:focus-visible, input:focus-visible{outline:3px solid var(--pitch);outline
 .brand-ball{font-size:1.5rem;line-height:1}
 .brand-text{display:flex;flex-direction:column;min-width:0}
 .brand-title{font-family:var(--font-display);font-size:1.02rem;letter-spacing:.04em;line-height:1.1}
-.brand-year{font-size:.6rem;letter-spacing:.14em;color:#9DB8A8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand-year{font-size:.6rem;letter-spacing:.14em;color:#9FB0CC;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .user-chip{
   background:var(--pitch);color:#fff;font-weight:700;font-size:.8rem;
   padding:8px 13px;border-radius:999px;max-width:40vw;
@@ -211,7 +211,7 @@ button:focus-visible, input:focus-visible{outline:3px solid var(--pitch);outline
 .tabbar{
   position:fixed;bottom:0;left:0;right:0;z-index:40;
   background:var(--card);border-top:1px solid var(--line);
-  display:grid;grid-template-columns:1fr 1fr 1fr;max-width:560px;margin:0 auto;
+  display:grid;grid-template-columns:1fr 1fr 1fr 1fr;max-width:560px;margin:0 auto;
   padding-bottom:env(safe-area-inset-bottom);
 }
 @media(min-width:560px){.tabbar{border:1px solid var(--line);border-bottom:none;border-radius:14px 14px 0 0}}
@@ -237,3 +237,54 @@ button:focus-visible, input:focus-visible{outline:3px solid var(--pitch);outline
 .tag-admin{font-size:.6rem;background:var(--money-tint);color:var(--money);padding:2px 7px;border-radius:99px;font-weight:700}
 .tag-off{font-size:.6rem;background:var(--loss-tint);color:var(--loss);padding:2px 7px;border-radius:99px;font-weight:700}
 .pin-reset{font-size:.8rem;background:var(--paper);border:1px solid var(--line);padding:4px 8px;border-radius:99px;display:inline-block}
+
+/* ============================================================
+   RESUMEN — toggle + matriz + por persona
+   ============================================================ */
+.seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:4px;gap:4px;margin:4px 0 14px;box-shadow:var(--shadow)}
+.seg button{flex:1;padding:9px 6px;border-radius:9px;font-weight:600;font-size:.84rem;color:var(--ink-soft)}
+.seg button.active{background:var(--pitch);color:#fff}
+
+/* leyenda */
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:.72rem;color:var(--ink-soft);margin:0 2px 12px;align-items:center}
+.legend b{color:var(--ink)}
+.lg-dot{display:inline-flex;align-items:center;gap:4px}
+.lg-pick{font-family:var(--font-display);font-size:.72rem;width:22px;height:22px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--paper)}
+.lg-pick.hit{background:var(--pitch);color:#fff;border-color:var(--pitch)}
+
+/* matriz: scroll horizontal, primera columna fija */
+.matrix-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:var(--radius);box-shadow:var(--shadow);background:var(--card)}
+table.matrix{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:.8rem}
+table.matrix th,table.matrix td{padding:7px 8px;text-align:center;white-space:nowrap;border-bottom:1px solid var(--line)}
+table.matrix thead th{position:sticky;top:0;background:var(--ink);color:#fff;font-size:.72rem;letter-spacing:.02em;z-index:3}
+table.matrix .col-match{position:sticky;left:0;background:var(--card);text-align:left;z-index:2;min-width:140px;border-right:2px solid var(--line)}
+table.matrix thead .col-match{z-index:4;background:var(--ink)}
+table.matrix .mt-team{font-weight:600;line-height:1.15}
+table.matrix .mt-meta{font-size:.66rem;color:var(--ink-soft)}
+table.matrix tbody tr:nth-child(even) td{background:#FBFCFB}
+table.matrix tbody tr:nth-child(even) .col-match{background:#FBFCFB}
+.cell-pick{font-family:var(--font-display);font-size:.78rem;width:24px;height:24px;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft)}
+.cell-pick.hit{background:var(--pitch);color:#fff;border-color:var(--pitch)}
+.cell-pick.miss{background:var(--loss-tint);color:var(--loss);border-color:var(--loss-tint)}
+.cell-pick.invalid{opacity:.4;text-decoration:line-through}
+.cell-empty{color:var(--line)}
+table.matrix tfoot td{position:sticky;bottom:0;background:var(--pitch-tint);font-weight:700;border-top:2px solid var(--pitch);font-size:.74rem}
+table.matrix tfoot .col-match{background:var(--pitch-tint);z-index:2}
+.foot-net{font-family:var(--font-display)} 
+.foot-net.pos{color:var(--pitch-deep)} .foot-net.neg{color:var(--loss)} .foot-net.zero{color:var(--ink-soft)}
+.foot-hits{font-size:.66rem;color:var(--ink-soft);font-family:var(--font-body);font-weight:600}
+
+/* por persona */
+.person-card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:12px;overflow:hidden}
+.person-head{display:flex;justify-content:space-between;align-items:center;padding:11px 14px;background:var(--ink);color:#fff}
+.person-head .ph-name{font-weight:700;font-size:.98rem}
+.person-head .ph-net{font-family:var(--font-display);font-size:1rem}
+.ph-net.pos{color:#8FC0F2} .ph-net.neg{color:#F2A79E} .ph-net.zero{color:#9FB0CC}
+.person-head .ph-sub{font-size:.66rem;color:#9FB0CC;font-weight:500}
+.person-bet{display:grid;grid-template-columns:auto 1fr auto;gap:9px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--line);font-size:.82rem}
+.person-bet:last-child{border-bottom:none}
+.person-bet .pb-match{line-height:1.2}
+.person-bet .pb-meta{font-size:.66rem;color:var(--ink-soft)}
+.person-bet .pb-net{font-weight:700;text-align:right}
+.pb-net.pos{color:var(--pitch-deep)} .pb-net.neg{color:var(--loss)} .pb-net.zero{color:var(--ink-soft)}
+.person-empty{padding:14px;font-size:.8rem;color:var(--ink-soft);text-align:center}
