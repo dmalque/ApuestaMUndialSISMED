@@ -133,8 +133,8 @@ const playerName = (id) => (S.players.find(p=>p.id===id)||{}).name || "¿?";
 
 /* ---------------- carga de datos ---------------- */
 async function loadMatches(){
-  const url = CONFIG.DATA_URL + "?t=" + Math.floor(Date.now()/300000); // rompe caché c/5 min
-  const r = await fetch(url);
+  const url = CONFIG.DATA_URL + "?t=" + Date.now(); // rompe caché en cada carga
+  const r = await fetch(url, { cache: "no-store" });
   if(!r.ok) throw new Error("No se pudo leer la fuente de partidos");
   const data = await r.json();
   S.matches = (data.matches||[]).slice().sort((a,b)=> parseKickoff(a)-parseKickoff(b));
@@ -263,6 +263,10 @@ function ticketHTML(m, opts={}){
   } else if(!fin){
     if(iLockedDay) foot = `<div class="lock-note closed">${ic("lock")} Cerraste tus apuestas de este día</div>`;
     else foot = `<div class="lock-note closed">${ic("lock")} Apuestas cerradas · ${now>=ko ? "partido en juego o por confirmar resultado" : "inicia " + fmtTime(ko)}</div>`;
+    // El admin puede cargar el resultado a mano apenas termine (la fuente automática puede tardar)
+    if(S.me && S.me.is_admin && now >= ko){
+      foot += `<button class="load-result-btn" data-loadresult="${key}">${ic("plus-circle")} Cargar resultado ahora</button>`;
+    }
   }
 
   let strip = "";
@@ -293,9 +297,9 @@ function ticketHTML(m, opts={}){
     </div>
     <div class="ticket-body">
       <div class="matchup">
-        <span class="team t1">${m.team1}</span>
+        <span class="team t1"><span class="tname">${m.team1}</span> <span class="tflag">${teamFlag(m.team1)}</span></span>
         <span class="score-mid">${score ? `${score[0]} – ${score[1]}` : `<span class="vs">VS</span>`}</span>
-        <span class="team t2">${m.team2}</span>
+        <span class="team t2"><span class="tflag">${teamFlag(m.team2)}</span> <span class="tname">${m.team2}</span></span>
       </div>
       ${fin
         ? `<div class="result-line">
@@ -339,20 +343,22 @@ function dayBlockHTML(day, esHoy){
     }
   }
 
-  const abiertos  = ms.filter(m => !isFinished(m) && canBet(m));
-  const enJuego   = ms.filter(m => !isFinished(m) && !canBet(m));
-  const terminados= ms.filter(m => isFinished(m));
-  if(abiertos.length){
-    html += `<div class="status-band open">${ic("circle")} ${manual?"Disponibles para apostar":"Abiertos para apostar"}</div>`;
-    html += abiertos.map(m=>ticketHTML(m)).join("");
+  const byKo = (a,b) => parseKickoff(a) - parseKickoff(b);
+  const abiertos  = ms.filter(m => !isFinished(m) && canBet(m)).sort(byKo);
+  const enJuego   = ms.filter(m => !isFinished(m) && !canBet(m)).sort(byKo);
+  const terminados= ms.filter(m => isFinished(m)).sort(byKo);
+
+  if(terminados.length){
+    html += `<div class="status-band done">${ic("check-circle-2")} Terminados</div>`;
+    html += terminados.map(m=>ticketHTML(m)).join("");
   }
   if(enJuego.length){
     html += `<div class="status-band live">${ic("lock")} ${iLocked?"Cerrados por ti":"En juego · por confirmar resultado"}</div>`;
     html += enJuego.map(m=>ticketHTML(m)).join("");
   }
-  if(terminados.length){
-    html += `<div class="status-band done">${ic("check-circle-2")} Terminados</div>`;
-    html += terminados.map(m=>ticketHTML(m)).join("");
+  if(abiertos.length){
+    html += `<div class="status-band open">${ic("circle")} ${manual?"Disponibles para apostar":"Abiertos para apostar"}</div>`;
+    html += abiertos.map(m=>ticketHTML(m)).join("");
   }
   return html;
 }
@@ -469,7 +475,7 @@ function matrixHTML(players){
     }).join("");
     return `<tr>
       <td class="col-match">
-        <div class="mt-team">${m.team1} <span class="mt-meta">vs</span> ${m.team2}</div>
+        <div class="mt-team">${teamFlag(m.team1)} ${m.team1} <span class="mt-meta">vs</span> ${teamFlag(m.team2)} ${m.team2}</div>
         <div class="mt-meta">${limaDateStr(parseKickoff(m)).slice(5).replace("-","/")} · ${res}</div>
       </td>${cells}
     </tr>`;
@@ -514,7 +520,7 @@ function personHTML(players){
       const pickCls = !valid ? "invalid" : fin ? (bet.pick===outcome(m)?"hit":"miss") : "mine";
       return `<div class="person-bet">
         <span class="cell-pick ${pickCls}">${bet.pick}</span>
-        <span class="pb-match">${m.team1} vs ${m.team2}
+        <span class="pb-match">${teamFlag(m.team1)} ${m.team1} vs ${teamFlag(m.team2)} ${m.team2}
           <div class="pb-meta">${limaDateStr(parseKickoff(m)).slice(5).replace("-","/")}${sc?` · ${sc[0]}–${sc[1]}`:""}</div></span>
         <span class="pb-net ${ncls}">${net}</span>
       </div>`;
@@ -558,9 +564,9 @@ function viewPartidos(){
       }
       return `<button class="mini-match mini-${estado}" data-detail="${matchKey(m)}">
         <span class="dot dot-${estado}" title="${estado}"></span>
-        <span class="m1">${m.team1}</span>
+        <span class="m1">${m.team1} <span class="mflag">${teamFlag(m.team1)}</span></span>
         <span class="mini-score ${sc?"":"pending"}">${sc?`${sc[0]}–${sc[1]}`:fmtTime(parseKickoff(m))}</span>
-        <span class="m2">${m.team2}</span>
+        <span class="m2"><span class="mflag">${teamFlag(m.team2)}</span> ${m.team2}</span>
         <span class="mini-flag">${flag}</span>
       </button>`;
     }).join("");
@@ -698,35 +704,43 @@ function openAdmin(){
   });
 }
 
+function openResultForm(key){
+  const m = S.matches.find(x=>matchKey(x)===key); if(!m) return;
+  const tieneResultado = isFinished(m);
+  const cur = getScore(m) || ["",""];
+  openModal(`<div class="modal-title">${tieneResultado?"Corregir":"Cargar"} resultado</div>
+    <div class="modal-sub">${m.team1} vs ${m.team2}<br>Ingresa el marcador final. Esto recalcula al instante las ganancias de todos.</div>
+    <div class="modal-row">
+      <input class="input" id="ov1" inputmode="numeric" placeholder="${m.team1}" value="${cur[0]}">
+      <input class="input" id="ov2" inputmode="numeric" placeholder="${m.team2}" value="${cur[1]}">
+    </div>
+    <button class="btn btn-primary" id="ov-save">Guardar resultado</button>
+    <button class="btn btn-ghost" id="ov-del">Quitar (volver a usar la fuente automática)</button>`);
+  $("#ov-save").onclick = async () => {
+    const s1 = parseInt($("#ov1").value,10), s2 = parseInt($("#ov2").value,10);
+    if(isNaN(s1)||isNaN(s2)){ toast("Ingresa ambos marcadores"); return; }
+    await db.from("result_overrides").upsert({ match_key:key, score1:s1, score2:s2 });
+    await loadDB(); render(); closeModal(); toast("Resultado guardado");
+  };
+  $("#ov-del").onclick = async () => {
+    await db.from("result_overrides").delete().eq("match_key", key);
+    await loadDB(); render(); closeModal(); toast("Resultado quitado");
+  };
+}
+
 function openMatchDetail(key){
   const m = S.matches.find(x=>matchKey(x)===key); if(!m) return;
-  const adminBtn = S.me && S.me.is_admin ? `<button class="btn btn-ghost" id="fix-result">${ic("pencil")} Corregir resultado</button>` : "";
+  const tieneResultado = isFinished(m);
+  const yaInicio = new Date() >= parseKickoff(m);
+  const adminBtn = S.me && S.me.is_admin
+    ? `<button class="btn ${!tieneResultado && yaInicio ? "btn-primary" : "btn-ghost"}" id="fix-result">${ic(tieneResultado?"pencil":"plus-circle")} ${tieneResultado?"Corregir resultado":"Cargar resultado"}</button>`
+    : "";
   openModal(`<div style="margin:-6px -4px 0">${ticketHTML(m)}</div>${adminBtn}
     <button class="btn btn-ghost" id="det-close">Cerrar</button>`);
   $("#det-close").onclick = closeModal;
   bindPicks($("#modal-card"));
   const fx = $("#fix-result");
-  if(fx) fx.onclick = () => {
-    const cur = getScore(m) || ["",""];
-    openModal(`<div class="modal-title">Corregir: ${m.team1} vs ${m.team2}</div>
-      <div class="modal-sub">Este marcador reemplaza al de la fuente automática y recalcula las ganancias.</div>
-      <div class="modal-row">
-        <input class="input" id="ov1" inputmode="numeric" placeholder="${m.team1}" value="${cur[0]}">
-        <input class="input" id="ov2" inputmode="numeric" placeholder="${m.team2}" value="${cur[1]}">
-      </div>
-      <button class="btn btn-primary" id="ov-save">Guardar resultado</button>
-      <button class="btn btn-ghost" id="ov-del">Quitar corrección (usar fuente)</button>`);
-    $("#ov-save").onclick = async () => {
-      const s1 = parseInt($("#ov1").value,10), s2 = parseInt($("#ov2").value,10);
-      if(isNaN(s1)||isNaN(s2)){ toast("Ingresa ambos marcadores"); return; }
-      await db.from("result_overrides").upsert({ match_key:key, score1:s1, score2:s2 });
-      await loadDB(); render(); closeModal(); toast("Resultado corregido");
-    };
-    $("#ov-del").onclick = async () => {
-      await db.from("result_overrides").delete().eq("match_key", key);
-      await loadDB(); render(); closeModal(); toast("Corrección eliminada");
-    };
-  };
+  if(fx) fx.onclick = () => openResultForm(key);
 }
 
 /* ---------------- bindings ---------------- */
@@ -743,6 +757,7 @@ function bindView(){
     S.resumenMode = b.dataset.rmode; render(); window.scrollTo({top:0});
   });
   document.querySelectorAll(".btn-close-day").forEach(b => b.onclick = () => closeDay(b.dataset.day));
+  document.querySelectorAll("[data-loadresult]").forEach(b => b.onclick = (e) => { e.stopPropagation(); openResultForm(b.dataset.loadresult); });
   if(S.tab==="partidos"){
     const a = $("#today-anchor");
     if(a) a.scrollIntoView({block:"start"});

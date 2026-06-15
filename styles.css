@@ -400,3 +400,21 @@ svg.lucide{width:1em;height:1em;stroke-width:2.25}
 .mode-seg{flex-direction:column;gap:6px;margin:4px 0 6px}
 .mode-seg button{justify-content:flex-start;text-align:left;padding:11px 12px;font-size:.82rem}
 .mode-seg button .lucide{width:16px;height:16px;vertical-align:-0.2em;margin-right:5px}
+
+/* botón admin: cargar resultado en la boleta */
+.load-result-btn{
+  margin-top:8px;width:100%;background:var(--money-tint);color:var(--money);
+  border:1px solid #EBD9AE;border-radius:9px;padding:8px;font-weight:700;font-size:.8rem;
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+}
+.load-result-btn:active{background:#F6E9C8}
+.load-result-btn .lucide{width:15px;height:15px}
+
+/* ---------- Banderas ---------- */
+.tflag{font-size:1.15rem;line-height:1;vertical-align:-0.12em}
+.team{display:inline-flex;align-items:center;gap:6px}
+.team.t1{justify-content:flex-end}
+.team.t2{justify-content:flex-start}
+.tname{display:inline-block}
+.mflag{font-size:.95rem;line-height:1;vertical-align:-0.1em}
+.mt-team .tflag, .pb-match{}
